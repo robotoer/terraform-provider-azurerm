@@ -45,6 +45,27 @@ func resourceAppServiceCertificateOrder() *schema.Resource {
 				ValidateFunc: validation.StringIsNotEmpty,
 			},
 
+			"certificate_name": {
+				Type:         schema.TypeString,
+				Required:     true,
+				ForceNew:     true,
+				ValidateFunc: validation.StringIsNotEmpty,
+			},
+
+			"key_vault_id": {
+				Type:         schema.TypeString,
+				Required:     true,
+				ForceNew:     true,
+				ValidateFunc: validation.StringIsNotEmpty,
+			},
+
+			"key_vault_secret_name": {
+				Type:         schema.TypeString,
+				Required:     true,
+				ForceNew:     true,
+				ValidateFunc: validation.StringIsNotEmpty,
+			},
+
 			"location": azure.SchemaLocation(),
 
 			"resource_group_name": azure.SchemaResourceGroupName(),
@@ -178,6 +199,9 @@ func resourceAppServiceCertificateOrderCreateUpdate(d *schema.ResourceData, meta
 	log.Printf("[INFO] preparing arguments for App Service Certificate creation.")
 
 	name := d.Get("name").(string)
+	certificateName := d.Get("certificate_name").(string)
+	keyVaultID := d.Get("key_vault_id").(string)
+	keyVaultSecretName := d.Get("key_vault_secret_name").(string)
 	resourceGroup := d.Get("resource_group_name").(string)
 
 	if d.IsNewResource() {
@@ -243,6 +267,33 @@ func resourceAppServiceCertificateOrderCreateUpdate(d *schema.ResourceData, meta
 	}
 
 	d.SetId(*read.ID)
+
+	certificateResource := web.AppServiceCertificateResource{
+		AppServiceCertificate: &web.AppServiceCertificate{
+			KeyVaultID:         &keyVaultID,
+			KeyVaultSecretName: &keyVaultSecretName,
+		},
+		Location: utils.String(location),
+		Tags:     tags.Expand(t),
+	}
+
+	future2, err := client.CreateOrUpdateCertificate(ctx, resourceGroup, name, certificateName, certificateResource)
+	if err != nil {
+		return fmt.Errorf("Error creating/updating App Service Certificate Resource %q (Resource Group %q): %s", name, resourceGroup, err)
+	}
+
+	if err = future2.WaitForCompletionRef(ctx, client.Client); err != nil {
+		return fmt.Errorf("Error waiting for creating/updating of App Service Certificate Resource %q (Resource Group %q): %+v", name, resourceGroup, err)
+	}
+
+	readCert, err := client.GetCertificate(ctx, resourceGroup, name, certificateName)
+	if err != nil {
+		return fmt.Errorf("Error retrieving App Service Certificate Resource %q (Resource Group %q): %s", name, resourceGroup, err)
+	}
+
+	if readCert.ID == nil {
+		return fmt.Errorf("Cannot read App Service Certificate Resource %q (Resource Group %q) ID", name, resourceGroup)
+	}
 
 	return resourceAppServiceCertificateOrderRead(d, meta)
 }
